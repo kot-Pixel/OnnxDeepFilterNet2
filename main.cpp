@@ -2,8 +2,9 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#include "AAduioRecoder.h"
 
-int main() {
+void testOnnxRuntime() {
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "DeepFilterNet");
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
@@ -15,33 +16,37 @@ int main() {
 
     Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-    int frame_size = 480;      // 10ms @48kHz
-    int hop_size   = 240;      // 50% overlap
-    // std::vector<float> window = hann_window(frame_size);
-    //
-    // // 获取输入输出信息
-    // size_t num_input_nodes = session.GetInputCount();
-    // size_t num_output_nodes = session.GetOutputCount();
-    //
-    // std::cout << "Inputs: " << num_input_nodes << " Outputs: " << num_output_nodes << std::endl;
-    //
-    // // 假设是单输入 float[1, 3] 输出 float[1, 2]
-    // std::vector<float> input_tensor_values = {1.0f, 2.0f, 3.0f};
-    // std::vector<int64_t> input_shape = {1, 3};
-    //
-    // Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
-    //     memory_info, input_tensor_values.data(), input_tensor_values.size(), input_shape.data(), input_shape.size()
-    // );
-    //
-    // auto output_tensors = session.Run(
-    //     Ort::RunOptions{nullptr},
-    //     &session.GetInputName(0, Ort::AllocatorWithDefaultOptions()),
-    //     &input_tensor, 1,
-    //     &session.GetOutputName(0, Ort::AllocatorWithDefaultOptions()), 1
-    // );
-    //
-    // float* output_data = output_tensors[0].GetTensorMutableData<float>();
-    std::cout << "Output onnx runtime ok...." << std::endl;
+    size_t num_inputs = enc.GetInputCount();
+    Ort::AllocatorWithDefaultOptions allocator;
+    for (size_t i = 0; i < num_inputs; ++i) {
+        auto input_name = enc.GetInputNameAllocated(i, allocator);  // ONNX API返回std::string（C++11+）
+        std::cout << "输入 " << i << ": 名称='" << input_name.get() << "'" << std::endl;  // 替换LOGI，使用input_name直接（非.get()）
+        auto type_info = enc.GetInputTypeInfo(i);
+        auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+         std::cout << "输入 %zu: 名称='%s'" << i << input_name.get() << std::endl;
+
+        auto shape = tensor_info.GetShape();
+        std::string shape_str;
+        for (auto dim : shape) {
+            shape_str += std::to_string(dim) + " ";
+        }
+         std::cout << "  形状: [%s]" << shape_str.c_str() << std::endl;
+
+        auto elem_type = tensor_info.GetElementType();
+         std::cout << "  类型: %d (e.g., 1=float32)"<< elem_type << std::endl;
+    }
+}
+
+
+int main() {
+    CallbackPCMRecorder recorder;
+    bool startResult = recorder.start();
+
+    std::cout << " start aaudio recorder result is %d" << startResult << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+
+    recorder.stop();
+
     return 0;
 }

@@ -7,6 +7,7 @@ set(ONNX_RUNTIME_ROOT ${CMAKE_CURRENT_LIST_DIR}/onnx)
 set(ONNX_RUNTIME_INCLUDE_ROOT ${ONNX_RUNTIME_ROOT}/include)
 set(ONNX_RUNTIME_LIB_ROOT ${ONNX_RUNTIME_ROOT}/lib)
 
+
 add_library(onnx_runtime SHARED IMPORTED)
 
 set_target_properties(onnx_runtime PROPERTIES
@@ -17,22 +18,26 @@ set_target_properties(onnx_runtime PROPERTIES
         ${ONNX_RUNTIME_INCLUDE_ROOT}
 )
 
-add_library(onnx_runtime_jni SHARED IMPORTED)
+add_executable(OnnxDeepFilterNet2
 
-set_target_properties(onnx_runtime_jni PROPERTIES
-    IMPORTED_LOCATION
-        ${ONNX_RUNTIME_LIB_ROOT}/libonnxruntime4j_jni.so
+    lwrb.c
+    lwrb_ex.c
 
-    INTERFACE_INCLUDE_DIRECTORIES
-        ${ONNX_RUNTIME_INCLUDE_ROOT}
+    main.cpp
 )
 
-add_executable(OnnxDeepFilterNet2 main.cpp)
+
+target_include_directories(
+    OnnxDeepFilterNet2 PRIVATE
+
+    ${CMAKE_CURRENT_LIST_DIR}
+)
 
 target_link_libraries(
         OnnxDeepFilterNet2 PRIVATE
         onnx_runtime
-#        onnx_runtime_jni
+
+        aaudio
         log
 )
 
