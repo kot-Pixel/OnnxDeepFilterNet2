@@ -21,6 +21,19 @@ public:
        lwrb_init(&audio_rb, audio_rb_data, BUFFER_SIZE);
     }
 
+    bool read20ms(float* out_pcm) {
+        size_t available = lwrb_get_full(&audio_rb);
+        if (available < BYTES_PER_READ) {
+            return false;
+        }
+
+        size_t read = lwrb_read(&audio_rb,
+                                (uint8_t*)out_pcm,
+                                BYTES_PER_READ);
+        return read == BYTES_PER_READ;
+    }
+
+
     bool start() {
         aaudio_result_t result = AAudio_createStreamBuilder(&builder);
         if (result != AAUDIO_OK) {
@@ -51,10 +64,30 @@ public:
 
         LOGI("Callback PCM recording started");
 
+        pcmFile = fopen("/sdcard/test.pcm", "wb");
+        if (!pcmFile) {
+            LOGE("Failed to open PCM file");
+            return false;
+        }
+
+        running = true;
+        handlerThread = std::thread(&CallbackPCMRecorder::handlerLoop, this);
         return true;
     }
 
     void stop() {
+        running = false;
+        rb_cv.notify_all();
+
+        if (handlerThread.joinable()) {
+            handlerThread.join();
+        }
+
+        if (pcmFile) {
+            fclose(pcmFile);
+            pcmFile = nullptr;
+        }
+
         if (stream) {
             AAudioStream_requestStop(stream);
             AAudioStream_close(stream);
@@ -64,7 +97,6 @@ public:
             AAudioStreamBuilder_delete(builder);
             builder = nullptr;
         }
-
         LOGI("Callback PCM recording stopped");
     }
 
@@ -74,9 +106,21 @@ private:
     static constexpr int SAMPLE_RATE = 48000;
     static constexpr int CHANNELS = 1;
 
+    static constexpr int FRAME_MS = 20;
+    static constexpr int FRAMES_PER_READ = SAMPLE_RATE * FRAME_MS / 1000; // 960
+    static constexpr int BYTES_PER_READ = FRAMES_PER_READ * sizeof(float);
+
+    std::thread handlerThread;
+    std::atomic<bool> running{false};
+
+    std::mutex rb_mutex;
+    std::condition_variable rb_cv;
+
     // Ring buffer
     lwrb_t audio_rb;
     uint8_t audio_rb_data[BUFFER_SIZE];
+
+    FILE* pcmFile = nullptr;
 
     static aaudio_data_callback_result_t dataCallback(AAudioStream* stream,void* userData,void* audioData,int32_t numFrames) {
         LOGI("dataCallback invoke audio nums %d", numFrames);
@@ -95,6 +139,7 @@ private:
 
         if (to_write > 0) {
             lwrb_write(&recorder->audio_rb, (uint8_t*)in, to_write * sizeof(float));
+            recorder->rb_cv.notify_one();
         }
 
         return AAUDIO_CALLBACK_RESULT_CONTINUE;
@@ -108,11 +153,42 @@ private:
         LOGE("AAudio error: %d", error);
     }
 
+    void handlerLoop() {
+        float pcm[FRAMES_PER_READ];
 
-    void processAudio() {
+        while (running) {
+            std::unique_lock<std::mutex> lock(rb_mutex);
 
+            rb_cv.wait(lock, [&] {
+                return !running ||
+                       lwrb_get_full(&audio_rb) >= BYTES_PER_READ;
+            });
+
+            if (!running) break;
+
+            lwrb_read(&audio_rb,
+                      (uint8_t*)pcm,
+                      BYTES_PER_READ);
+
+            lock.unlock();
+
+            process20ms(pcm);
+        }
     }
 
+    void process20ms(const float* pcm) {
+        LOGI("Handler got 20ms pcm, first sample=%f", pcm[0]);
+        if (!pcmFile) return;
+
+        size_t written = fwrite(pcm, sizeof(float), FRAMES_PER_READ, pcmFile);
+        if (written != FRAMES_PER_READ) {
+            LOGE("Failed to write all samples to file");
+        }
+    }
+
+
 };
+
+
 
 #endif //AAUDIORECORDER_AAUDIORECORDER_H
