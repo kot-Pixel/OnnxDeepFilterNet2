@@ -22,6 +22,7 @@ add_executable(OnnxDeepFilterNet2
 
     lwrb.c
     lwrb_ex.c
+    kiss_fft.c
 
     main.cpp
 )
@@ -31,6 +32,7 @@ target_include_directories(
     OnnxDeepFilterNet2 PRIVATE
 
     ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/kissfft
 )
 
 target_link_libraries(
