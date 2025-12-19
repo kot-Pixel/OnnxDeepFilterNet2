@@ -7,7 +7,7 @@
 #include <android/log.h>
 
 #include "lwrb.h"
-#include "kissfft/kiss_fft.h"
+#include "kissfft/kiss_fftr.h"
 
 // Buffer for 10 times of 20ms audio data
 #define BUFFER_SIZE 960 * 10 * sizeof(float)
@@ -19,7 +19,9 @@
 class CallbackPCMRecorder {
 public:
     CallbackPCMRecorder() : stream(nullptr), builder(nullptr) {
-       lwrb_init(&audio_rb, audio_rb_data, BUFFER_SIZE);
+        lwrb_init(&audio_rb, audio_rb_data, BUFFER_SIZE);
+
+        initSTFT(); 
     }
 
     bool read20ms(float* out_pcm) {
@@ -71,6 +73,10 @@ public:
             return false;
         }
 
+        fseek(pcmFile, 0, SEEK_END);
+        long start_size = ftell(pcmFile);
+        LOGI("Start file size: %ld bytes", start_size);  // 应为 0
+
         running = true;
         handlerThread = std::thread(&CallbackPCMRecorder::handlerLoop, this);
         return true;
@@ -113,6 +119,7 @@ private:
 
     static constexpr int FFT_SIZE = 960;
     static constexpr int HOP_SIZE = 480;
+    static constexpr int FREQ_BINS = FFT_SIZE / 2 + 1;
 
     std::thread handlerThread;
     std::atomic<bool> running{false};
@@ -145,6 +152,10 @@ private:
             lwrb_write(&recorder->audio_rb, (uint8_t*)in, to_write * sizeof(float));
             recorder->rb_cv.notify_one();
         }
+
+        size_t free_space2 = lwrb_get_free(&recorder->audio_rb) / sizeof(float);
+
+        LOGI("Ring buffer, free_space2 %zu", free_space2);
 
         return AAUDIO_CALLBACK_RESULT_CONTINUE;
     }
@@ -188,53 +199,71 @@ private:
         }
     }
 
-    void processPCM(const float* pcm, int numSamples) {
-        stft_buffer.insert(stft_buffer.end(), pcm, pcm + numSamples);
+    void processPCM(const float* pcm, int n) {
+        input_buffer.insert(input_buffer.end(), pcm, pcm + n);
 
-        // 2️⃣ process all complete FFT frames
-        std::vector<kiss_fft_cpx> spectrum;
-        int readPos = 0;
-        while (readPos + FFT_SIZE <= stft_buffer.size()) {
-            std::vector<kiss_fft_cpx> fft_in(FFT_SIZE);
-            std::vector<kiss_fft_cpx> fft_out(FFT_SIZE);
+        while (input_buffer.size() >= FFT_SIZE) {
+            for (int i = 0; i < FFT_SIZE; ++i)
+                fft_in[i] = input_buffer[i] * window[i];
 
-            // apply Hann window
-            for (int i = 0; i < FFT_SIZE; ++i) {
-                fft_in[i].r = stft_buffer[readPos + i] * hann_window[i];
-                fft_in[i].i = 0.0f;
-            }
+            kiss_fftr(fft_cfg, fft_in.data(), fft_out.data());
 
-            kiss_fft(fft_cfg, fft_in.data(), fft_out.data());
 
-            // 3️⃣ convert to real/imag for DFN2 input
-            std::vector<float> model_input;
-            model_input.reserve(FFT_SIZE * 2);
-            for (auto& c : fft_out) {
-                model_input.push_back(c.r);
-                model_input.push_back(c.i);
-            }
+            // iSTFT
+            std::vector<float> time(FFT_SIZE);
+            kiss_fftri(ifft_cfg, fft_out.data(), time.data());
 
-            readPos += HOP_SIZE;
-        }
+            for (int i = 0; i < FFT_SIZE; ++i)
+                ola_buffer[i] += (time[i] / FFT_SIZE) * window[i] / ola_norm;
 
-        if (readPos > 0) {
-            stft_buffer.erase(stft_buffer.begin(), stft_buffer.begin() + readPos);
+            fwrite(ola_buffer.data(), sizeof(float), HOP_SIZE, pcmFile);
+
+            memmove(ola_buffer.data(),
+                    ola_buffer.data() + HOP_SIZE,
+                    (FFT_SIZE - HOP_SIZE) * sizeof(float));
+            memset(ola_buffer.data() + FFT_SIZE - HOP_SIZE, 0,
+                   HOP_SIZE * sizeof(float));
+
+            input_buffer.erase(input_buffer.begin(),
+                               input_buffer.begin() + HOP_SIZE);
         }
     }
 
 
     // =================== STFT ===================
-    kiss_fft_cfg fft_cfg = nullptr;
-    std::vector<float> hann_window;
-    std::vector<float> stft_buffer; // overlap buffer
+    kiss_fftr_cfg fft_cfg = nullptr;
+    kiss_fftr_cfg ifft_cfg = nullptr;
 
-    void initHann() {
-        hann_window.resize(FFT_SIZE);
+    std::vector<float> window;
+    std::vector<float> input_buffer;
+    std::vector<float> ola_buffer;
+
+    std::vector<float> fft_in;
+    std::vector<kiss_fft_cpx> fft_out;
+
+    float ola_norm = 1.f;
+
+    void initSTFT() {
+        window.resize(FFT_SIZE);
+
+        float window_energy = 0.f;
         for (int i = 0; i < FFT_SIZE; ++i) {
-            hann_window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (FFT_SIZE - 1)));
+            window[i] = 0.5f - 0.5f * cosf(2.f * M_PI * i / FFT_SIZE);
+            window_energy += window[i] * window[i];
         }
-    }
 
+        // COLA normalization (Hann + 50% overlap)
+        ola_norm = window_energy / HOP_SIZE;
+
+        fft_cfg  = kiss_fftr_alloc(FFT_SIZE, 0, nullptr, nullptr);
+        ifft_cfg = kiss_fftr_alloc(FFT_SIZE, 1, nullptr, nullptr);
+
+        input_buffer.reserve(FFT_SIZE * 2);
+        ola_buffer.assign(FFT_SIZE, 0.f);
+
+        fft_in.resize(FFT_SIZE);
+        fft_out.resize(FREQ_BINS);
+    }
 
 };
 

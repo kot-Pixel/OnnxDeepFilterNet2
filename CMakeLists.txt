@@ -23,6 +23,7 @@ add_executable(OnnxDeepFilterNet2
     lwrb.c
     lwrb_ex.c
     kiss_fft.c
+    kiss_fftr.c
 
     main.cpp
 )
