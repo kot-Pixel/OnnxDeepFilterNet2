@@ -16,24 +16,44 @@ void testOnnxRuntime() {
 
     Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-    size_t num_inputs = enc.GetInputCount();
+    size_t enc_num_inputs = enc.GetInputCount();
     Ort::AllocatorWithDefaultOptions allocator;
-    for (size_t i = 0; i < num_inputs; ++i) {
-        auto input_name = enc.GetInputNameAllocated(i, allocator);  // ONNX API返回std::string（C++11+）
-        std::cout << "输入 " << i << ": 名称='" << input_name.get() << "'" << std::endl;  // 替换LOGI，使用input_name直接（非.get()）
-        auto type_info = enc.GetInputTypeInfo(i);
-        auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
-         std::cout << "输入 %zu: 名称='%s'" << i << input_name.get() << std::endl;
+    for (size_t i = 0; i < enc_num_inputs; ++i) {
+        auto input_name = enc.GetInputNameAllocated(i, allocator);
+        std::cout << "enc.onnx Input " << i << ":- " << input_name << std::endl;
+    }
 
-        auto shape = tensor_info.GetShape();
-        std::string shape_str;
-        for (auto dim : shape) {
-            shape_str += std::to_string(dim) + " ";
-        }
-         std::cout << "  形状: [%s]" << shape_str.c_str() << std::endl;
 
-        auto elem_type = tensor_info.GetElementType();
-         std::cout << "  类型: %d (e.g., 1=float32)"<< elem_type << std::endl;
+
+    size_t enc_num_outputs = enc.GetOutputCount();
+    for (size_t i = 0; i < enc_num_outputs; ++i) {
+        auto out_name = enc.GetOutputNameAllocated(i, allocator);
+        std::cout << "enc.onnx Output " << i << ":- " << out_name << std::endl;
+    }
+
+    size_t erb_num_inputs = erb.GetInputCount();
+    for (size_t i = 0; i < erb_num_inputs; ++i) {
+        auto input_name = erb.GetInputNameAllocated(i, allocator);
+        std::cout << "erb.onnx Input " << i << ":- " << input_name << std::endl;
+    }
+
+    size_t erb_num_outputs = erb.GetOutputCount();
+    for (size_t i = 0; i < erb_num_outputs; ++i) {
+        auto out_name = erb.GetOutputNameAllocated(i, allocator);
+        std::cout << "erb.onnx Output " << i << ":- " << out_name << std::endl;
+    }
+
+
+    size_t df_num_inputs = df.GetInputCount();
+    for (size_t i = 0; i < df_num_inputs; ++i) {
+        auto input_name = df.GetInputNameAllocated(i, allocator);
+        std::cout << "df.onnx Input " << i << ":- " << input_name << std::endl;
+    }
+
+    size_t df_num_outputs = df.GetOutputCount();
+    for (size_t i = 0; i < df_num_outputs; ++i) {
+        auto out_name = df.GetOutputNameAllocated(i, allocator);
+        std::cout << "df.onnx Output " << i << ":- " << out_name << std::endl;
     }
 }
 
@@ -47,6 +67,8 @@ int main() {
     std::this_thread::sleep_for(std::chrono::seconds(30));
 
     recorder.stop();
+
+    // testOnnxRuntime();
 
     return 0;
 }
