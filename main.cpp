@@ -1,4 +1,6 @@
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 #include <onnxruntime_cxx_api.h>
 
@@ -61,10 +63,8 @@ void testOnnxRuntime() {
 int main() {
     CallbackPCMRecorder recorder;
     bool startResult = recorder.start();
-
-    std::cout << " start aaudio recorder result is %d" << startResult << std::endl;
-
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    (void) startResult;
+    std::this_thread::sleep_for(std::chrono::seconds(300));
 
     recorder.stop();
 
