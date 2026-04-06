@@ -8,6 +8,8 @@
 #include <fstream>
 #include <iosfwd>
 #include <thread>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include <aaudio/AAudio.h>
 #include <android/log.h>
@@ -349,7 +351,23 @@ private:
     /** NNAPI_FLAG_CPU_DISABLED：与 NNAPI_FLAG_CPU_ONLY 互斥。true = 禁止 NNAPI 走其自带 CPU 实现，改由 ORT CPU 算子承接分区 */
     static constexpr bool kNnapiCpuDisabled = false;
 #endif
+#if defined(__ANDROID__) && defined(ONNX_ENABLE_QNN)
+    /**
+     * QNN EP 依赖高通 QNN SDK 的 .so（与 ORT 分开部署），例如从 SDK 的 android/arm64-v8a 拷到设备：
+     *   libQnnSystem.so、libQnnHtp.so，及文档要求的其它依赖（如 libQnnCpu.so 等，以当前 QNN 版本为准）。
+     * 部署方式二选一：
+     *   (1) 全部放在同一目录，并 export LD_LIBRARY_PATH=该目录；
+     *   (2) 设 kQnnHtpBackendSoPath 为设备上 libQnnHtp.so 的绝对路径（与 backend_type 互斥，见 ORT 文档）。
+     */
+    static constexpr const char *kQnnHtpArch = "68";
+    /** 非空则使用 QNN `backend_path` 指向该文件；为空则用 `backend_type=htp`（依赖 LD_LIBRARY_PATH 能找到 libQnnHtp.so） */
+    static constexpr const char *kQnnHtpBackendSoPath = "";
+#endif
+#if defined(ONNX_ORT_LOG_VERBOSE) && ONNX_ORT_LOG_VERBOSE
+    Ort::Env env{ORT_LOGGING_LEVEL_VERBOSE, "DFN"};
+#else
     Ort::Env env{ORT_LOGGING_LEVEL_ERROR, "DFN"};
+#endif
     Ort::SessionOptions session_options;
     std::unique_ptr<DeepFilterNet3OnnxPulse> dfnPulse;
 
@@ -387,8 +405,26 @@ private:
     void initONNX() {
         session_options.SetIntraOpNumThreads(1);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+#if defined(ONNX_ORT_LOG_VERBOSE) && ONNX_ORT_LOG_VERBOSE
+        session_options.SetLogSeverityLevel(ORT_LOGGING_LEVEL_VERBOSE);
+#endif
 
-#if defined(__ANDROID__) && defined(ONNX_ENABLE_NNAPI)
+#if defined(__ANDROID__) && defined(ONNX_ENABLE_QNN)
+        // 需 libonnxruntime 带 QNN EP；且设备上能 dlopen QNN SDK（缺 libQnnHtp.so 会 SetupBackend failed）
+        try {
+            std::unordered_map<std::string, std::string> qnn_options;
+            if (kQnnHtpBackendSoPath[0] != '\0') {
+                qnn_options["backend_path"] = kQnnHtpBackendSoPath;
+            } else {
+                qnn_options["backend_type"] = "htp";
+            }
+            qnn_options["htp_arch"] = kQnnHtpArch;
+            session_options.AppendExecutionProvider("QNN", qnn_options);
+            session_options.AppendExecutionProvider_CPU(1);
+        } catch (const Ort::Exception &e) {
+            LOGE("QNN EP append failed (fallback implicit CPU): %s", e.what());
+        }
+#elif defined(__ANDROID__) && defined(ONNX_ENABLE_NNAPI)
         // 先注册 NNAPI；需 libonnxruntime 编译含 NNAPI。可与 NNAPI_FLAG_USE_FP16 等按位或组合。
         {
             uint32_t nnapi_flags = static_cast<uint32_t>(NNAPI_FLAG_USE_NONE);

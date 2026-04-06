@@ -4,6 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+
+// 提供 OrtSessionOptionsAppendExecutionProvider_CPU 声明；AppendExecutionProvider_CPU 内联实现依赖此头
+#include "cpu_provider_factory.h"
 #include <onnxruntime_cxx_api.h>
 #include <string>
 #include <unordered_map>
