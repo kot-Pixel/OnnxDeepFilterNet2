@@ -24,6 +24,9 @@
 #if defined(__ANDROID__) && defined(ONNX_ENABLE_NNAPI)
 #include "nnapi_provider_factory.h"
 #endif
+#if defined(__ANDROID__) && defined(ONNX_ENABLE_QNN)
+#include "cpu_provider_factory.h"
+#endif
 
 // Buffer for 10 times of 20ms audio data
 #define BUFFER_SIZE 960 * 10 * sizeof(float)
@@ -420,7 +423,12 @@ private:
             }
             qnn_options["htp_arch"] = kQnnHtpArch;
             session_options.AppendExecutionProvider("QNN", qnn_options);
-            session_options.AppendExecutionProvider_CPU(1);
+            {
+                Ort::Status cpu_status{OrtSessionOptionsAppendExecutionProvider_CPU(session_options, 1)};
+                if (!cpu_status.IsOK()) {
+                    LOGE("CPU EP append failed: %s", cpu_status.GetErrorMessage().c_str());
+                }
+            }
         } catch (const Ort::Exception &e) {
             LOGE("QNN EP append failed (fallback implicit CPU): %s", e.what());
         }
