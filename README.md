@@ -1,12 +1,21 @@
-# ONNX Runtime
+# DeepFilterNet2 降噪
+
+目前代码还是使用onnxruntime 来推理模型，后续将会修改为QnnRumtime。最终目标是完成ECNR整个audio pipeline，本仓库仅仅使用 DeepFilterNet2 降噪是作为音频前置处理。
+
+## ONNX Runtime / ONNX Rumtime (NNAPI/Qnn) Runtime
+
+- Onnx rumtime 来降噪录音在QCS6490上验证了，发现CPU 占用到单核 60% - 80%.
+这个占用太高了，和使用官方Rust编写的占用差不多。后面将会优化这个占用，目标是将 onnx runtime cpu backend 转换为 gpu 或者 dsp 进行推理，这样会降低cpu使用率。
+
+- 使用 onnxruntime ep 来加速的时候发现和直接使用.onnx模型是有一定的要求的。直接使用qnn ep的时候发现他是要求是一个的static shape，但是官方导出的onnx 他是动态的图，这个不符合要求，所以尝试将DeepFliterNet2的图编译成Stream模型。https://github.com/kot-Pixel/DeepFilterNet
 
 ## QNN Rumtime
 
-Onnx runtime 来去使用 CPU 进行推理的时候发现 CPU 占用的太高。
-
-所以想尝试使用QNN 来使用 HTP 后端来进行加速。下面是将 DeepFliterNet2 三个onnx 模型转换为QNN Runtime
+使用QNN 来使用 GPU /HTP 后端来进行加速。下面是将 DeepFliterNet2 三个onnx 模型转换为QNN Runtime
 
 去执行。
+
+下面是使用 qualcomm-ai-engine-direct-sdk 来将 onnx 模型转换为Qnn模型，使用之前需要下载对应的sdk。
 
 ```bash
 
@@ -214,4 +223,6 @@ export ADSP_LIBRARY_PATH="/data/local/tmp/qnn;/vendor/dsp/cdsp;/vendor/lib/rfsa/
 
 ./qnn-sample-app  --backend ./libQnnHtp.so  --model ./liberb_dec_no_einsum_qnn_model.so --input_list ./input_list.txt
 ```
+
+上述 Qnn 的时候，可以使用gpu来推理模型了，但是 HTP 后端还没有验证成功。
 
