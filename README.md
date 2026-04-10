@@ -1,6 +1,5 @@
 # ONNX Runtime
 
-
 ## QNN Rumtime
 
 Onnx runtime 来去使用 CPU 进行推理的时候发现 CPU 占用的太高。
@@ -94,7 +93,6 @@ ${QNN_SDK_ROOT}/bin/x86_64-linux-clang/qnn-onnx-converter \
 
 ```
 
-
 ## 非 Stream onnx 模型转为 QNN
 
 ```bash
@@ -151,3 +149,69 @@ drwxrwxr-x 3 qnn qnn 4.0K Apr  8 15:57 ..
 -rwxr-xr-x 1 qnn qnn  21M Apr  8 16:25 liberb_dec_no_einsum_qnn_model.so
 
 ```
+
+现在对应
+
+## 生成input_list.txt的方法
+
+```bash
+python3 -c "
+import onnx
+m = onnx.load('erb_dec.onnx')
+for i in m.graph.input:
+    if i.name.startswith('val_') and i.name in str(i): pass
+    t = i.type.tensor_type
+    dims = [d.dim_value if d.dim_value else d.dim_param for d in t.shape.dim]
+    print(i.name, dims)
+"
+```
+
+查看graph的shape...
+
+erb_dec.onnx的输入是这些。
+
+```bash
+emb [1, 'S', 512]
+e3 [1, 64, 'S', 8]
+e2 [1, 64, 'S', 8]
+e1 [1, 64, 'S', 16]
+e0 [1, 64, 'S', 32]
+```
+
+这里假设这个S = 1, 执行下面的脚本。之后这里就会出现erb_inputs
+
+```bash
+import numpy as np
+import os
+out_dir = "erb_inputs"
+os.makedirs(out_dir, exist_ok=True)
+shapes = [
+    ("emb", (1, 1, 512)),
+    ("e3",  (1, 64, 1, 8)),
+    ("e2",  (1, 64, 1, 8)),
+    ("e1",  (1, 64, 1, 16)),
+    ("e0",  (1, 64, 1, 32)),
+]
+for name, sh in shapes:
+    np.random.randn(*sh).astype(np.float32).tofile(os.path.join(out_dir, f"{name}.raw"))
+```
+
+这里将下面的内容写入到input_list.txt中去。
+
+```bash
+erb_inputs/emb.raw erb_inputs/e3.raw erb_inputs/e2.raw erb_inputs/e1.raw erb_inputs/e0.raw
+```
+
+使用HTP作为后端的时候，还需要将link 对应dsp的库。
+
+```bash
+~/qairt/2.45.0.260326/lib/hexagon-v68/unsigned$ cp ./libSnpeHtpV68Skel.so  /mnt/d/Qnn
+
+export VENDOR_LIB=/vendor/lib64/
+
+export LD_LIBRARY_PATH=/data/local/tmp/qnn:/vendor/dsp/cdsp:$VENDOR_LIB
+export ADSP_LIBRARY_PATH="/data/local/tmp/qnn;/vendor/dsp/cdsp;/vendor/lib/rfsa/adsp;/system/lib/rfsa/adsp;/dsp"
+
+./qnn-sample-app  --backend ./libQnnHtp.so  --model ./liberb_dec_no_einsum_qnn_model.so --input_list ./input_list.txt
+```
+
