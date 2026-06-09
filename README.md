@@ -226,3 +226,5 @@ export ADSP_LIBRARY_PATH="/data/local/tmp/qnn;/vendor/dsp/cdsp;/vendor/lib/rfsa/
 
 上述 Qnn 的时候，可以使用gpu来推理模型了，但是 HTP 后端还没有验证成功。
 
+使用 Hexagon 后端来加速onnx推理比较折腾，并且模型有一定的要求，例如Graph的shape等等都存在要求，这块相对比较复杂，后面将不会向下探索。
+
